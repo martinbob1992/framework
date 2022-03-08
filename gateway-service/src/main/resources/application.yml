@@ -1,0 +1,41 @@
+server:
+  port: 2000
+
+dubbo:
+  cloud:
+    subscribed-services: auth-service
+  protocols:
+    dubbo:
+      port: -1
+
+spring:
+  main:
+    allow-bean-definition-overriding: true
+  application:
+    name: gateway-service
+  cloud:
+    nacos:
+      discovery:
+        server-addr: 192.168.199.91:8848
+    gateway:
+      discovery:
+        locator:
+          enabled: true #使用服务发现路由
+      routes:
+        - id: auth-router
+          uri: lb://auth-service
+          predicates:
+            - Path=/api/auth/**
+          filters:
+            - StripPrefix=1 #去掉匹配前缀
+        - id: user-router
+          uri: lb://user-service
+          predicates:
+            - Path=/api/user/**
+          filters:
+            - StripPrefix=1 #去掉匹配前缀
+# https://mp.weixin.qq.com/s/om2JF3e_oKAyz4gd4z-IRw
+management:
+  endpoint:
+    gateway:
+      enable: false

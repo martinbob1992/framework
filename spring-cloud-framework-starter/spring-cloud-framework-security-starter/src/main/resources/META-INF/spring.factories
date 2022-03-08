@@ -1,0 +1,3 @@
+org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
+com.marsh.framework.security.config.SpringSecurityResourceConfig,\
+com.marsh.framework.security.config.SpringSecurityStarterConfig

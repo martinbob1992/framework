@@ -1,0 +1,24 @@
+server:
+  port: 8851
+  servlet:
+    context-path: /user
+dubbo:
+  cloud:
+    subscribed-services:
+  scan:
+    base-packages: com.marsh.auth
+  protocol:
+    name: dubbo
+    port: -1
+spring:
+  application:
+    name: @artifactId@
+  redis:
+    host: 192.168.199.91
+    database: 11
+    password: yihai123
+    port: 6379
+  cloud:
+    nacos:
+      discovery:
+        server-addr: 192.168.199.91:8848
