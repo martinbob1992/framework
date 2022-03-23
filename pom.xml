@@ -6,7 +6,7 @@
 
     <groupId>com.marsh</groupId>
     <artifactId>spring-cloud-framework</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <version>${revision}</version>
     <modules>
         <module>gateway-service</module>
         <module>auth-service</module>
@@ -18,12 +18,17 @@
     <packaging>pom</packaging>
 
     <properties>
+        <!-- 项目统一版本管理 -->
+        <revision>1.0-SNAPSHOT</revision>
+
         <maven.compiler.source>8</maven.compiler.source>
         <maven.compiler.target>8</maven.compiler.target>
         <spring.cloud.alibaba.version>2.2.5.RELEASE</spring.cloud.alibaba.version>
         <spring.cloud.version>Hoxton.SR9</spring.cloud.version>
         <spring.boot.dependencies.version>2.3.2.RELEASE</spring.boot.dependencies.version>
         <dubbo.version>2.7.8</dubbo.version>
+
+        <flatten-maven-plugin.version>1.1.0</flatten-maven-plugin.version>
     </properties>
 
     <dependencyManagement>
@@ -130,6 +135,32 @@
                     <execution>
                         <goals>
                             <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>flatten-maven-plugin</artifactId>
+                <version>${flatten-maven-plugin.version}</version>
+                <configuration>
+                    <!-- 是否更新pom文件，此处还有更高级的用法 -->
+                    <updatePomFile>true</updatePomFile>
+                    <flattenMode>resolveCiFriendliesOnly</flattenMode>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>flatten</id>
+                        <phase>process-resources</phase>
+                        <goals>
+                            <goal>flatten</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>flatten.clean</id>
+                        <phase>clean</phase>
+                        <goals>
+                            <goal>clean</goal>
                         </goals>
                     </execution>
                 </executions>
