@@ -1,7 +1,6 @@
 package com.marsh.framework.redisson.codec;
 
 import com.google.gson.Gson;
-import com.google.gson.reflect.TypeToken;
 import com.google.gson.stream.JsonReader;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
@@ -22,14 +21,13 @@ import java.nio.charset.Charset;
  * @author Marsh
  * @date 2021-11-16日 18:09
  */
-public class GsonCodec<T> extends BaseCodec {
+public class GsonCodec extends BaseCodec {
 
     private Gson gson = new Gson();
-    private Class c;
+    private final Class clazz;
 
-    public GsonCodec(Class c) {
-        new TypeToken<T>() {}.getType();
-        this.c = c;
+    public GsonCodec(Class clazz) {
+        this.clazz = clazz;
     }
 
     private final Encoder encoder = new Encoder() {
@@ -50,7 +48,7 @@ public class GsonCodec<T> extends BaseCodec {
     private final Decoder<Object> decoder = new Decoder<Object>() {
         @Override
         public Object decode(ByteBuf buf, State state) throws IOException {
-            return gson.fromJson(new JsonReader(new InputStreamReader(new ByteBufInputStream(buf),"UTF-8")), c);
+            return gson.fromJson(new JsonReader(new InputStreamReader(new ByteBufInputStream(buf),"UTF-8")), clazz);
         }
     };
 
