@@ -95,4 +95,18 @@ public class RedissonTest {
 
     }
 
+    @Test
+    public void f(){
+        MyQueueData d1 = new MyQueueData();
+        d1.setId(new UUIDGenerator().next());
+        d1.setName("d1");
+        String msgId = myAckQueue.push(d1);
+
+        RAckQueueData<MyQueueData> pop = myAckQueue.pop(msgId);
+        if (pop != null){
+            System.out.println(pop);
+            myAckQueue.ack(pop.getId());
+        }
+    }
+
 }

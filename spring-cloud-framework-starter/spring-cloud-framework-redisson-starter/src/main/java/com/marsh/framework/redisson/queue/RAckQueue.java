@@ -280,19 +280,13 @@ public class RAckQueue<V> extends RedissonObject implements RDestroyable {
      * @author Marsh
      * @date 2022-06-14
      * @param datas
-     * @return boolean
+     * @return List<String> 返回保存到队列中的消息id
      */
-    public boolean push(List<V> datas) {
+    public List<String> push(List<V> datas) {
+        List<String> result = new ArrayList<>();
         if (datas == null || datas.size() == 0){
-            return false;
+            return result;
         }
-
-        RMap<Object, Object> a = redisson.getMap("a");
-        RFuture<Object> objectRFuture = a.putAsync("1", "1");
-        objectRFuture.onComplete((k,v)->{
-
-        });
-
         RBatch batch = redisson.createBatch(defaultBatchOptions);
         RTopicAsync topic = batch.getTopic(channelName,StringCodec.INSTANCE);
         RMapAsync<String, V> map = batch.getMap(dataHashName, codec);
@@ -300,12 +294,13 @@ public class RAckQueue<V> extends RedissonObject implements RDestroyable {
 
         for (V data : datas){
             String msgId = IdUtil.fastUUID();
+            result.add(msgId);
             map.putAsync(msgId,data);
             deque.addFirstAsync(msgId);
             topic.publishAsync(CMD_MESSAGE+":"+msgId);
         }
         batch.execute();
-        return true;
+        return result;
     }
 
     /**
@@ -315,11 +310,46 @@ public class RAckQueue<V> extends RedissonObject implements RDestroyable {
      * @param data
      * @return boolean
      */
-    public boolean push(V data) {
+    public String push(V data) {
         if (data == null){
-            return false;
+            return "";
         }
-        return push(ListUtil.toList(data));
+        List<String> result = push(ListUtil.toList(data));
+        return result != null && result.size() > 0 ? result.get(0):"";
+    }
+
+    /**
+     * 通过消息id弹出数据的lua脚本
+     */
+    private static final String POP_ID_LUA =
+            "local flag = redis.call('LREM',KEYS[2],-1,ARGV[2]);" +
+            "if flag > 0 then " +
+                "redis.call('ZADD',KEYS[1],ARGV[1],ARGV[2]);" +
+                "return redis.call('HGET',KEYS[3],ARGV[2]);" +
+            "end;" +
+            "return nil;";
+    /**
+     * 直接通过消息id弹出数据
+     * @author Marsh
+     * @date 2022-06-15
+     * @param id
+     * @return com.marsh.framework.redisson.queue.RAckQueueData<V>
+     */
+    public RAckQueueData<V> pop(String id){
+        if (StrUtil.isBlank(id)){
+            return null;
+        }
+        RScript script = redisson.getScript(getCodec());
+        V result = script.eval(RScript.Mode.READ_WRITE, POP_ID_LUA, RScript.ReturnType.VALUE,
+                Arrays.asList(timeoutQueueName,queueName,dataHashName),
+                System.currentTimeMillis()+getExecutionTimeoutMs(),id);
+        if (result == null){
+            return null;
+        }
+        RAckQueueData<V> data = new RAckQueueData<>();
+        data.setData(result);
+        data.setId(id);
+        return data;
     }
 
     /**
