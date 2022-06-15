@@ -4,6 +4,7 @@ import cn.hutool.core.lang.generator.UUIDGenerator;
 import com.marsh.framework.redisson.queue.MyAckQueue;
 import com.marsh.framework.redisson.queue.MyAckQueue1;
 import com.marsh.framework.redisson.queue.MyQueueData;
+import com.marsh.framework.redisson.queue.RAckQueueData;
 import lombok.SneakyThrows;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -52,13 +53,7 @@ public class RedissonTest {
         a();
         a();
         a();
-        a();
-        a();
-        a();
-        a();
-        a();
-        a();
-        a();
+
 
     }
 
@@ -85,13 +80,19 @@ public class RedissonTest {
 
     @Test
     public void e(){
-        MyQueueData pop = myAckQueue.pop();
+        /*RAckQueueData<MyQueueData> pop = myAckQueue.pop();
         if (pop != null){
+            System.out.println(pop);
             myAckQueue.ack(pop.getId());
+        }*/
+        for (int i = 0;i < 4;i++){
+            RAckQueueData<MyQueueData> pop1 = myAckQueue.pop();
+            if (pop1 != null){
+                System.out.println(pop1);
+                myAckQueue.unack(pop1.getId());
+            }
         }
-        MyQueueData pop1 = myAckQueue.pop();
-        System.out.println(pop1);
-        myAckQueue.unack(pop1.getId());
+
     }
 
 }

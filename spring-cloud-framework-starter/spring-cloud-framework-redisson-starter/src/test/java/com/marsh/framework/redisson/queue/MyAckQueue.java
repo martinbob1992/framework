@@ -10,7 +10,7 @@ import org.springframework.stereotype.Component;
  * @date 2022-06-02日 17:05
  */
 @Component
-public class MyAckQueue<T extends QueueData> extends RAckQueue<T> {
+public class MyAckQueue<V> extends RAckQueue<V> {
 
     public MyAckQueue(RedissonClient redisson) {
         super((Redisson) redisson, "test", new GsonCodec(MyQueueData.class));
