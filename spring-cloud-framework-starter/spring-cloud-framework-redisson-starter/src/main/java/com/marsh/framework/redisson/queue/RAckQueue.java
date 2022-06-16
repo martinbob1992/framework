@@ -3,7 +3,6 @@ package com.marsh.framework.redisson.queue;
 import cn.hutool.core.collection.ListUtil;
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
-import com.marsh.framework.redisson.task.DelayedConsumerTask;
 import io.netty.util.Timeout;
 import io.netty.util.TimerTask;
 import lombok.extern.slf4j.Slf4j;
@@ -332,6 +331,10 @@ public class RAckQueue<V> extends RedissonObject implements RDestroyable {
             "local flag = redis.call('LREM',KEYS[2],-1,ARGV[2]);" +
             "if flag > 0 then " +
                 "redis.call('ZADD',KEYS[1],ARGV[1],ARGV[2]);" +
+                "local timeout = redis.call('zrange', KEYS[1], 0, 0, 'WITHSCORES'); " +
+                "if timeout[1] ~= nil then " +
+                    "redis.call('publish', KEYS[4], '"+CMD_TIMEOUT+"'..':'..timeout[2]); " +
+                "end; " +
                 "return redis.call('HGET',KEYS[3],ARGV[2]);" +
             "end;" +
             "return nil;";
@@ -348,7 +351,7 @@ public class RAckQueue<V> extends RedissonObject implements RDestroyable {
         }
         RScript script = redisson.getScript(getCodec());
         V result = script.eval(RScript.Mode.READ_WRITE, POP_ID_LUA, RScript.ReturnType.VALUE,
-                Arrays.asList(timeoutQueueName,queueName,dataHashName),
+                Arrays.asList(timeoutQueueName,queueName,dataHashName,channelName),
                 System.currentTimeMillis()+getExecutionTimeoutMs(),id);
         if (result == null){
             return null;
@@ -433,11 +436,31 @@ public class RAckQueue<V> extends RedissonObject implements RDestroyable {
      * @date 2022-06-15
      * @param id
      */
-    public void ack(String id){
+    public boolean ack(String id){
         List<String> ids = new ArrayList<>();
         ids.add(id);
-        ack(ids);
+        List<String> results = ack(ids);
+        return results != null && results.size() > 0;
     }
+
+    /**
+     * 回滚数据的lua脚本
+     */
+    private static final String ACK_LUA =
+            "local results = {};" +
+            "for i = 1, #ARGV, 1 do " +
+                "local flag = redis.call('ZREM',KEYS[1],ARGV[i]);" +
+                "if flag > 0 then " +
+                    "redis.call('HDEL',KEYS[2],ARGV[i]);" +
+                    "redis.call('HDEL',KEYS[3],ARGV[i]);" +
+                    "table.insert(results, ARGV[i]);" +
+                "end;" +
+            "end;" +
+            "local timeout = redis.call('zrange', KEYS[1], 0, 0, 'WITHSCORES'); " +
+            "if timeout[1] ~= nil then " +
+                "redis.call('publish', KEYS[4], '"+CMD_TIMEOUT+"'..':'..timeout[2]); " +
+            "end; " +
+            "return results;";
 
     /**
      * 批量确认消息已处理
@@ -445,27 +468,17 @@ public class RAckQueue<V> extends RedissonObject implements RDestroyable {
      * @date 2022-06-15
      * @param ids
      */
-    public void ack(List<String> ids){
+    public List<String> ack(List<String> ids){
+        List<String> results = new ArrayList<>();
         if (ids == null || ids.size() == 0){
-            return;
+            return results;
         }
-        RBatch batch = redisson.createBatch(defaultBatchOptions);
-        RMapAsync<String, V> map = batch.getMap(dataHashName, codec);
-        RScoredSortedSetAsync<String> timeoutSet = batch.getScoredSortedSet(timeoutQueueName,StringCodec.INSTANCE);
-        RMapAsync<String, Integer> retryMap = batch.getMap(retryName, IntegerCodec.INSTANCE);
-        ids.stream().forEach(id -> {
-            map.removeAsync(id);
-            timeoutSet.removeAsync(id);
-            retryMap.removeAsync(id);
-        });
-        RFuture<Collection<ScoredEntry<String>>> collectionRFuture = timeoutSet.entryRangeAsync(0, 0);
-        collectionRFuture.onComplete((v,e)->{
-            if (e != null){
-                ScoredEntry<String> entry = v.stream().findFirst().get();
-                scheduleTimeoutTask(entry.getScore().longValue());
-            }
-        });
-        batch.execute();
+
+        RScript script = redisson.getScript(StringCodec.INSTANCE);
+        results = script.eval(RScript.Mode.READ_WRITE, ACK_LUA, RScript.ReturnType.MULTI,
+                Arrays.asList(timeoutQueueName,dataHashName,retryName,channelName),
+                ids.toArray());
+        return results;
     }
 
     /**
