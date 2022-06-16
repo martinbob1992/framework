@@ -3,6 +3,7 @@ package com.marsh.framework.redisson.queue;
 import cn.hutool.core.collection.ListUtil;
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
+import com.marsh.framework.redisson.task.DelayedConsumerTask;
 import io.netty.util.Timeout;
 import io.netty.util.TimerTask;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +19,8 @@ import org.redisson.client.protocol.RedisCommands;
 import org.redisson.client.protocol.ScoredEntry;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -47,7 +50,8 @@ public class RAckQueue<V> extends RedissonObject implements RDestroyable {
     private static final String CMD_MESSAGE = "message";
     private static final String CMD_ERROR = "error";
 
-    private final RTopic topic;
+    private static final ConcurrentMap<String, RTopic> topicCache = new ConcurrentHashMap<>();
+
     private final AtomicReference<QueueTransferTask.TimeoutTask> lastTimeout = new AtomicReference<QueueTransferTask.TimeoutTask>();
 
     private final Redisson redisson;
@@ -96,36 +100,39 @@ public class RAckQueue<V> extends RedissonObject implements RDestroyable {
         this.errorName = suffixName(this.queueName, "error");
         this.channelName = suffixName(this.queueName, "channel");
 
-        topic = new RedissonTopic(StringCodec.INSTANCE, commandExecutor, channelName);
-        topic.addListener(new BaseStatusListener() {
-            @Override
-            public void onSubscribe(String channel) {
-                cleanTimeout();
-            }
-        });
-        /**
-         * 添加一个消息处理器监听，主要用来监听
-         * 1.超时事件（会将超时的队列任务重新投递到队列中，如果超过最大重试次数则放到失败队列中）
-         * 2.队列中新增数据事件（用户主动向队列中放置数据，由于超时重新投递的数据，主动调用unack()方法重新投放到队列中的数据
-         * 3.当数据被放到失败队列中
-         */
-        topic.addListener(String.class, new MessageListener<String>() {
-            @Override
-            public void onMessage(CharSequence channel, String cmd) {
-                if (StrUtil.isBlank(cmd)){
-                    return;
+        RTopic topic = new RedissonTopic(StringCodec.INSTANCE, commandExecutor, channelName);
+        RTopic oldTopic = topicCache.putIfAbsent(getName(), topic);
+        if (oldTopic == null){
+            // 这里主要是为了防止name相同的子类创建多个监听导致数据混乱问题
+            topic.addListener(new BaseStatusListener() {
+                @Override
+                public void onSubscribe(String channel) {
+                    cleanTimeout();
                 }
-                String[] split = cmd.split(":");
-                if (CMD_TIMEOUT.equals(split[0])){
-                    scheduleTimeoutTask(Long.parseLong(split[1]));
-                } else if (CMD_MESSAGE.equals(split[0])){
-                    RAckQueue.this.onMessage(split[1]);
-                } else if (CMD_ERROR.equals(split[0])){
-                    onError(split[1]);
+            });
+            /**
+             * 添加一个消息处理器监听，主要用来监听
+             * 1.超时事件（会将超时的队列任务重新投递到队列中，如果超过最大重试次数则放到失败队列中）
+             * 2.队列中新增数据事件（用户主动向队列中放置数据，由于超时重新投递的数据，主动调用unack()方法重新投放到队列中的数据
+             * 3.当数据被放到失败队列中
+             */
+            topic.addListener(String.class, new MessageListener<String>() {
+                @Override
+                public void onMessage(CharSequence channel, String cmd) {
+                    if (StrUtil.isBlank(cmd)){
+                        return;
+                    }
+                    String[] split = cmd.split(":");
+                    if (CMD_TIMEOUT.equals(split[0])){
+                        scheduleTimeoutTask(Long.parseLong(split[1]));
+                    } else if (CMD_MESSAGE.equals(split[0])){
+                        RAckQueue.this.onMessage(split[1]);
+                    } else if (CMD_ERROR.equals(split[0])){
+                        onError(split[1]);
+                    }
                 }
-            }
-        });
-
+            });
+        }
     }
 
     /**
@@ -522,6 +529,9 @@ public class RAckQueue<V> extends RedissonObject implements RDestroyable {
 
     @Override
     public void destroy(){
-        topic.removeAllListeners();
+        RTopic topic = topicCache.get(getName());
+        if (topic != null){
+            topic.removeAllListeners();
+        }
     }
 }
