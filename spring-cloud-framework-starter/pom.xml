@@ -13,6 +13,7 @@
     <modules>
         <module>spring-cloud-framework-redisson-starter</module>
         <module>spring-cloud-framework-security-starter</module>
+        <module>spring-cloud-framework-log-starter</module>
     </modules>
 
     <artifactId>spring-cloud-framework-starter</artifactId>
